@@ -1,11 +1,69 @@
 pico-8 cartridge // http://www.pico-8.com
 version 41
 __lua__
---start
+
 -- global constants
 -- highest integer value in pico
 int_max=32767
 
+GAME_STATES={none=0,start=1,game=2,game_over=3, game_over_screen=4}
+game_state=GAME_STATES.none
+
+function _init()
+	game_state=GAME_STATES.start
+end
+
+function _update60()
+	if game_state==GAME_STATES.game then
+		game_running.update()
+	elseif game_state==GAME_STATES.start then
+		game_start.update()
+	elseif game_state==GAME_STATES.game_over_screen then
+		game_over_screen.update()
+	end
+end
+
+--30fps or 15fps
+--60fps with update60
+function _draw()
+	cls()
+	rect(0,0,127,127,5)
+	if game_state==GAME_STATES.start then
+		game_start.draw()
+	elseif game_state==GAME_STATES.game then
+		game_running.draw()
+	elseif game_state==GAME_STATES.game_over then
+		game_over.draw()
+	elseif game_state==GAME_STATES.game_over_screen then
+		game_over_screen.draw()
+	end
+end
+
+-->8
+--game_start
+--==============================
+game_start={}
+function game_start.update()
+	if btnp(5) then
+		init_game_state()
+		game_state=GAME_STATES.game
+	end
+end
+
+function game_start.draw()
+	rectfill(1,1,126,7,1)
+	local w=print("picotris",2,2,6)
+	line(1,9,126,9,5)
+	line(1,8,126,8,6)
+	print("❎".."start game",40,60,6)
+	print("⬅️".."left|".."➡️".."right",2,109,5)
+	print("⬇️".."fast drop",2,115)
+	print("🅾️".."rotate left|".."❎".."rotate right",2,121)
+end
+
+-->8
+--game_running
+--==============================
 --config
 cells_hor=10
 cells_vert=20
@@ -23,7 +81,7 @@ stores all minos
 1	0,0	1,0	2,0
 2	0,1	1,1	2,1
 3	0,2	1,2	2,2
-]]--
+]]
 matrix={}
 
 MINO_TYPES={none=0,i=1,l=2,o=3,s=4,z=5,t=6,j=7}
@@ -98,7 +156,7 @@ bag={
 }
 function bag:get_next()
 	local next=deli(self.content,#self.content)
-	if(#self.content==0)self.fill()
+	if(#self.content==0)self:fill(self)
 	return next
 end
 function bag:fill()
@@ -119,9 +177,6 @@ function bag:print()
 	print(out)
 end
 ]]
-
-GAME_STATES={none=0,start=1,game=2,game_over=3, game_over_screen=4}
-game_state=GAME_STATES.none
 
 -- game variables & constants
 MAX_LEVEL=19
@@ -153,235 +208,63 @@ frames_since_clear=0
 is_line_cleared=false
 lines_to_clear={}
 
-function _init()
-	game_state=GAME_STATES.start
-end
+game_running={}
+function game_running.update()
+	if frame_count==int_max then
+		frame_count=frame_count-last_drop_frame
+		last_drop_frame=0
+	end
 
-function _update60()
-	if game_state==GAME_STATES.game then
-		if frame_count==int_max then
-			frame_count=frame_count-last_drop_frame
-			last_drop_frame=0
-		end
-
-		frame_count+=1
-		
-		if mino.pos==nil then
-			if is_line_cleared then
-				frames_since_clear+=1
-				if frames_since_clear==LINE_CLEAR_DELAY then
-					remove_cleared_lines()
-					blink_animation=0
-					spawn_mino()
-					is_line_cleared=false
-					frames_since_clear=0
-				end
-			elseif frames_since_lock==ARE then
+	frame_count+=1
+	
+	if mino.pos==nil then
+		if is_line_cleared then
+			frames_since_clear+=1
+			if frames_since_clear==LINE_CLEAR_DELAY then
+				remove_cleared_lines()
+				blink_animation_framecount=0
 				spawn_mino()
-				frames_since_lock=0
-			else 
-				frames_since_lock+=1
+				is_line_cleared=false
+				frames_since_clear=0
 			end
+		elseif frames_since_lock==ARE then
+			spawn_mino()
+			frames_since_lock=0
+		else 
+			frames_since_lock+=1
 		end
+	end
 
-		if(btnp(0))move_mino({x=-1,y=0})
-		if(btnp(1))move_mino({x=1,y=0})
-		if not is_btn_down_pressed and btn(3) then
-			is_softdropping=true
-			is_btn_down_pressed=true
-		end
-		if is_btn_down_pressed and not btn(3) then
-			is_softdropping=false
-			is_btn_down_pressed=false
-		end
-		if(btnp(4))rotate_mino("ccv")
-		if(btnp(5))rotate_mino("cv")
-		
-		if is_softdropping then
-			if frame_count-last_drop_frame >= softdrop_speed then
-				move_mino({x=0,y=1})
-				last_drop_frame=frame_count
-			end
-		-- auto drop
-		elseif frame_count-last_drop_frame >= mino_drop_speed[level+1] then
+	if(btnp(0))move_mino({x=-1,y=0})
+	if(btnp(1))move_mino({x=1,y=0})
+	if not is_btn_down_pressed and btn(3) then
+		is_softdropping=true
+		is_btn_down_pressed=true
+	end
+	if is_btn_down_pressed and not btn(3) then
+		is_softdropping=false
+		is_btn_down_pressed=false
+	end
+	if(btnp(4))rotate_mino("ccv")
+	if(btnp(5))rotate_mino("cv")
+	
+	if is_softdropping then
+		if frame_count-last_drop_frame >= softdrop_speed then
 			move_mino({x=0,y=1})
 			last_drop_frame=frame_count
 		end
-	elseif game_state==GAME_STATES.start then
-		if btnp(5) then
-			init_game_state()
-			game_state=GAME_STATES.game
-		end
-	elseif game_state==GAME_STATES.game_over_screen then
-		if btnp(4) then 
-			game_state=GAME_STATES.start
-			reset_matrix()
-		end
-		if btnp(5) then 
-			init_game_state()
-			game_state=GAME_STATES.game
-			reset_matrix()
-		end
+	-- auto drop
+	elseif frame_count-last_drop_frame >= mino_drop_speed[level+1] then
+		move_mino({x=0,y=1})
+		last_drop_frame=frame_count
 	end
 end
 
-xpos=128
---30fps or 15fps
---60fps with update60
-function _draw()
-	cls()
-	rect(0,0,127,127,5)--frame
-	if game_state==GAME_STATES.start then
-		--rectfill(32,32,96,96,1)
-		rectfill(1,1,126,7,1)
-		local w=print("picotris",2,2,6)
-		line(1,9,126,9,5)
-		line(1,8,126,8,6)
-		--rectfill(1,79,126,109,1)
-		print("❎".."start game",40,60,6)
-		print("⬅️".."left|".."➡️".."right",2,109,5)
-		print("⬇️".."fast drop",2,115)
-		print("🅾️".."rotate left|".."❎".."rotate right",2,121)
-	elseif game_state==GAME_STATES.game or game_state==GAME_STATES.game_over then
-		draw_grid()
-		draw_matrix()
-		draw_game_ui()
-		if(game_state==GAME_STATES.game)draw_mino()
-		if (game_state==GAME_STATES.game_over) draw_gameover_matrix()
-	elseif game_state==GAME_STATES.game_over_screen then
-		draw_grid()
-		draw_matrix()
-		draw_game_ui()
-		draw_gameover_matrix()
-		rectfill(32,32,96,64,1)
-		rect(32,32,96,64,6)
-		print("game over",34,34,6)
-		line(32,40,96,40)
-		print(chr(151).."new game",34,52)
-		print(chr(142).."start screen")
-	end
-end
-
-function init_matrix()
-	for x=1,cells_hor do
-		matrix[x]={}
-		for y=1,cells_vert do
-			matrix[x][y]=0
-		end
-	end
-end
-
-pointer=0
-finished=false
-max_cells=cells_vert*cells_hor
-cells={}
-function draw_gameover_matrix()
-	for i=0, pointer do
-		local x=i%cells_hor 
-		local y=(cells_vert-1)-i\cells_hor
-		if(cells[i]==nil)cells[i]=rnd(7)+1 
-		draw_cell(x,y,cells[i])
-	end
-
-	finished=pointer==max_cells-1
-	
-	if finished then 
-		game_state=GAME_STATES.game_over_screen
-		return
-	end
-
-	pointer+=1
-end
-
-function reset_matrix()
-	cells={}
-	finished=false
-	pointer=0
-end
-
-function draw_grid()
-	local x=grid_x
- 	local y=grid_y 
-	color(6)
-	--start tl->cv
-	line(x-1,y-1,x+grid_w,y-1)
-	line(x+grid_w,y+grid_h)
-	line(x-1,y+grid_h)
-	line(x-1,y-1)
-end
-
--- x an y are matrix coordinates
-function draw_cell(x,y,spr_idx)
-	local x1=grid_x+x*cs
-	local y1=grid_y+y*cs
-	spr(spr_idx,x1,y1)
-end
-
-function draw_mino()
-	if mino.pos==nil then return end	
-	for i=1,7,2 do
-		spr(mino.typ,
-			grid_x+mino.pos[i]*cs,
-			grid_y+mino.pos[i+1]*cs)
-	end
-end
-
-function draw_next_mino(type,x,y)
-	rect(x,y,x+27,y+15)	
-	for i=1,7,2 do
-		spr(type,
-			-16+x+MINO_SPAWN_POS[type][i]*cs,
-			-10+y+MINO_SPAWN_POS[type][i+1]*cs)
-	end
-end
-
-blink_rate=20
-blink_animation=0
-function draw_matrix()
-	if(#lines_to_clear>0)blink_animation+=1
-	for x=1,cells_hor do
-		for y=1,cells_vert do
-			local draw=true
-			if #lines_to_clear>0 then
-				for i=1,#lines_to_clear do
-					if lines_to_clear[i]==y and blink_animation%blink_rate>0 and blink_animation%blink_rate<11 then
-						--dont draw cell
-						draw=false
-					end
-				end
-			end
-			if matrix[x][y]>0 and draw then
-				draw_cell(x-1,y-1,matrix[x][y])
-			end
-		end
-	end
-end
-
-function draw_game_ui() 
-	print("score:"..score,79,4,6)
-	print("-------")
-	print("level:"..level)
-	print("lines:"..cleared_lines)
-	--next mino
-	if #bag.content>0 then
-		draw_next_mino(bag.content[#bag.content],79,109)
-	end
-end
-
-function spawn_mino()
-	mino.rot=MINO_DIRECTIONS.n
-	mino.pos={}
-	mino.typ=bag:get_next()
-	for v in all(MINO_SPAWN_POS[mino.typ])do
-		add(mino.pos,v)
-	end
-	for i=1,7,2 do
-		local x=mino.pos[i]
-		local y=mino.pos[i+1]
-		if matrix[x][y] ~= 0 then
-			game_state=GAME_STATES.game_over
-		end
-	end 
+function game_running.draw()
+	draw_grid()
+	draw_matrix()
+	draw_game_ui()
+	draw_mino()
 end
 
 -- dir: {x,y}
@@ -446,45 +329,20 @@ function move_mino(dir)
 	end
 end
 
-function init_game_state()
-	bag:fill()
-	lines=0
-	level=0
-	score=0
-	init_matrix()
-	frame_count=0
-	last_drop_frame=0
-end
-
-function remove_cleared_lines()
-	for y in all(lines_to_clear) do
-		for x=1,cells_hor do
-			matrix[x][y]=0
-		end
+function spawn_mino()
+	mino.rot=MINO_DIRECTIONS.n
+	mino.pos={}
+	mino.typ=bag:get_next()
+	for v in all(MINO_SPAWN_POS[mino.typ])do
+		add(mino.pos,v)
 	end
-	--gravity kicks in
-	local i=0
-	for v in all(lines_to_clear) do
-		for y=v-1+i,1,-1 do
-			for x=1,cells_hor do
-				matrix[x][y+1]=matrix[x][y]
-			end
+	for i=1,7,2 do
+		local x=mino.pos[i]
+		local y=mino.pos[i+1]
+		if matrix[x][y] ~= 0 then
+			game_state=GAME_STATES.game_over
 		end
-		i+=1
-	end
-	lines_to_clear={}
-end
-
-function is_on_grid(x,y)
-	return x>=0 and x<cells_hor and y>=0 and y<cells_vert
-end
-
-function is_empty_cell(x,y)
-	if(x==-1)x=0
-	if(x==cells_hor)x=cells_hor-1
-	if(y==-1)y=0
-	if(y==cells_vert)y=cells_vert-1
-	return matrix[x+1][y+1]==0 
+	end 
 end
 
 function rotate_mino(dir)
@@ -536,10 +394,196 @@ function rotate_mino(dir)
 	end
 end
 
--->8
---game
+blink_rate=20
+blink_animation_framecount=0
+function draw_matrix()
+	if(#lines_to_clear>0)blink_animation_framecount+=1
+	for x=1,cells_hor do
+		for y=1,cells_vert do
+			local draw=true
+			if #lines_to_clear>0 then
+				for i=1,#lines_to_clear do
+					if lines_to_clear[i]==y and blink_animation_framecount%blink_rate>0 and blink_animation_framecount%blink_rate<11 then
+						--dont draw cell
+						draw=false
+					end
+				end
+			end
+			if matrix[x][y]>0 and draw then
+				draw_cell(x-1,y-1,matrix[x][y])
+			end
+		end
+	end
+end
+
+-- x an y are matrix coordinates
+function draw_cell(x,y,spr_idx)
+	local x1=grid_x+x*cs
+	local y1=grid_y+y*cs
+	spr(spr_idx,x1,y1)
+end
+
+function draw_mino()
+	if mino.pos==nil then return end	
+	for i=1,7,2 do
+		spr(mino.typ,
+			grid_x+mino.pos[i]*cs,
+			grid_y+mino.pos[i+1]*cs)
+	end
+end
+
+function draw_next_mino(type,x,y)
+	rect(x,y,x+27,y+15)	
+	for i=1,7,2 do
+		spr(type,
+			-16+x+MINO_SPAWN_POS[type][i]*cs,
+			-10+y+MINO_SPAWN_POS[type][i+1]*cs)
+	end
+end
+
+function init_game_state()
+	bag:fill()
+	lines=0
+	level=0
+	score=0
+	init_matrix()
+	frame_count=0
+	last_drop_frame=0
+end
+
+function init_matrix()
+	for x=1,cells_hor do
+		matrix[x]={}
+		for y=1,cells_vert do
+			matrix[x][y]=0
+		end
+	end
+end
+
+function remove_cleared_lines()
+	for y in all(lines_to_clear) do
+		for x=1,cells_hor do
+			matrix[x][y]=0
+		end
+	end
+	--gravity kicks in
+	local i=0
+	for v in all(lines_to_clear) do
+		for y=v-1+i,1,-1 do
+			for x=1,cells_hor do
+				matrix[x][y+1]=matrix[x][y]
+			end
+		end
+		i+=1
+	end
+	lines_to_clear={}
+end
+
+function is_on_grid(x,y)
+	return x>=0 and x<cells_hor and y>=0 and y<cells_vert
+end
+
+function is_empty_cell(x,y)
+	if(x==-1)x=0
+	if(x==cells_hor)x=cells_hor-1
+	if(y==-1)y=0
+	if(y==cells_vert)y=cells_vert-1
+	return matrix[x+1][y+1]==0 
+end
+
 -->8
 --game_over
+--==============================
+game_over={}
+function game_over.draw()
+	draw_grid()
+	draw_matrix()
+	draw_game_ui()
+	draw_game_over_matrix()
+end
+
+pointer=0
+finished=false
+max_cells=cells_vert*cells_hor
+cells={}
+function draw_game_over_matrix()
+	for i=0, pointer do
+		local x=i%cells_hor 
+		local y=(cells_vert-1)-i\cells_hor
+		if(cells[i]==nil)cells[i]=rnd(7)+1 
+		draw_cell(x,y,cells[i])
+	end
+
+	finished=pointer==max_cells-1
+	
+	if finished then 
+		game_state=GAME_STATES.game_over_screen
+		return
+	end
+
+	pointer+=1
+end
+
+function reset_game_over_matrix()
+	cells={}
+	finished=false
+	pointer=0
+end
+
+-->8
+--game_over_screen
+--==============================
+game_over_screen={}
+function game_over_screen.update()
+	if btnp(4) then 
+		game_state=GAME_STATES.start
+		reset_game_over_matrix()
+	end
+	if btnp(5) then 
+		init_game_state()
+		game_state=GAME_STATES.game
+		reset_game_over_matrix()
+	end
+end
+
+function game_over_screen.draw()
+	draw_grid()
+	draw_matrix()
+	draw_game_ui()
+	draw_game_over_matrix()
+	rectfill(32,32,96,64,1)
+	rect(32,32,96,64,6)
+	print("game over",34,34,6)
+	line(32,40,96,40)
+	print(chr(151).."new game",34,52)
+	print(chr(142).."start screen")
+end
+
+-->8
+--shared
+--==============================
+function draw_game_ui() 
+	print("score:"..score,79,4,6)
+	print("-------")
+	print("level:"..level)
+	print("lines:"..cleared_lines)
+	--next mino
+	if #bag.content>0 then
+		draw_next_mino(bag.content[#bag.content],79,109)
+	end
+end
+
+function draw_grid()
+	local x=grid_x
+ 	local y=grid_y 
+	color(6)
+	--start tl->cv
+	line(x-1,y-1,x+grid_w,y-1)
+	line(x+grid_w,y+grid_h)
+	line(x-1,y+grid_h)
+	line(x-1,y-1)
+end
+
 __gfx__
 00000000111111008888880099999900333333002222220011111100555555000000000000000000000000000000000000000000000000000000000000000000
 000000001cccc100899998009aaaa9003bbbb3002888820012222100511115000000000000000000000000000000000000000000000000000000000000000000
