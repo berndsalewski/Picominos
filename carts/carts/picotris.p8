@@ -1,25 +1,30 @@
 pico-8 cartridge // http://www.pico-8.com
 version 41
 __lua__
-
--- global constants
--- highest integer value in pico
-c_int_max=32767
+#include common.lua
+cart_id="picotris"
 
 e_game_states={none=0,start=1,game=2,game_over=3, game_over_screen=4}
 game_state=e_game_states.none
 
+-- highscore is saved in cartridge data
+-- indices 0-19
+-- 0=1st name, 1=1st score, ..., 18=10th name, 19=10th scoregit 
+highscore=nil
+
 function _init()
 	game_state=e_game_states.start
+	cartdata(cart_id)
+	read_highscore_from_cartrige()
 end
 
 function _update60()
-	if game_state==e_game_states.game then
-		game_running.update()
-	elseif game_state==e_game_states.start then
+	if game_state==e_game_states.start then
 		game_start.update()
+	elseif game_state==e_game_states.game then
+		game_running.update()
 	elseif game_state==e_game_states.game_over_screen then
-		game_over_screen.update()
+		game_over_screen.update()	
 	end
 end
 
@@ -52,10 +57,11 @@ end
 
 function game_start.draw()
 	rectfill(1,1,126,7,1)
-	local w=print("picotris",2,2,6)
+	print("picotris",2,2,6)
 	line(1,9,126,9,5)
 	line(1,8,126,8,6)
-	print("❎".."start game",40,60,6)
+	draw_highscore_read(34,27)
+	print("❎".."start game",40,100,6)
 	print("⬅️".."left|".."➡️".."right",2,109,5)
 	print("⬇️".."fast drop",2,115)
 	print("🅾️".."rotate left|".."❎".."rotate right",2,121)
@@ -503,6 +509,7 @@ function game_over.draw()
 	draw_game_over_matrix()
 end
 
+--TODO modularise variables by making them table members
 pointer=0
 finished=false
 max_cells=c_cells_vert*c_cells_hor
@@ -517,7 +524,8 @@ function draw_game_over_matrix()
 
 	finished=pointer==max_cells-1
 	
-	if finished then 
+	if finished then
+		is_highscore_achieved=is_highscore(score) 
 		game_state=e_game_states.game_over_screen
 		return
 	end
@@ -535,16 +543,49 @@ end
 --game_over_screen
 --==============================
 game_over_screen={}
+current_selected_char=1
+current_edit_index=1
+current_editable_name="a"
+--is_highscore_editable=false
+is_game_over_screen_initialised=false
+
+function game_over_screen.init()
+	current_editable_name={"a"}
+	current_selected_char=1
+	current_edit_index=1	
+	is_game_over_screen_initialised=true
+end
+
 function game_over_screen.update()
-	if btnp(4) then 
+	if not is_game_over_screen_initialised then 
+		game_over_screen.init()
+	end
+
+	if btnp(e_buttons.up) then
+		current_selected_char=wrap_value(current_selected_char+1,1,#decode)
+		current_editable_name[current_edit_index]=decode[current_selected_char]
+	elseif btnp(e_buttons.down) then
+		current_selected_char=wrap_value(current_selected_char-1,1,#decode)
+		current_editable_name[current_edit_index]=decode[current_selected_char]
+	elseif btnp(e_buttons.left) then
+		current_edit_index=max(current_edit_index-1,1)
+		if #current_editable_name>current_edit_index then
+			current_editable_name[current_edit_index+1]=nil
+		end
+	elseif btnp(e_buttons.right) then
+		current_edit_index=min(current_edit_index+1,6)
+		current_selected_char=encode["a"]
+		if(current_edit_index>#current_editable_name)then
+			current_editable_name[current_edit_index]="a"
+		end
+	elseif btnp(e_buttons.x) then
+		save_highscore(get_name(),score)
+		--is_highscore_editable=false
+		reset_game_over_matrix()
 		game_state=e_game_states.start
-		reset_game_over_matrix()
+		is_game_over_screen_initialised=false
 	end
-	if btnp(5) then 
-		init_game_state()
-		game_state=e_game_states.game
-		reset_game_over_matrix()
-	end
+
 end
 
 function game_over_screen.draw()
@@ -552,12 +593,17 @@ function game_over_screen.draw()
 	draw_matrix()
 	draw_game_ui()
 	draw_game_over_matrix()
-	rectfill(32,32,96,64,1)
-	rect(32,32,96,64,6)
-	print("game over",34,34,6)
-	line(32,40,96,40)
-	print(chr(151).."new game",34,52)
-	print(chr(142).."start screen")
+	local wh=is_highscore_achieved and 92 or 32
+	draw_window(32,63-wh/2,64,wh,"game over",6,1,draw_game_over_content)
+end
+
+function draw_game_over_content(x,y)
+	if is_highscore_achieved then
+		draw_highscore_edit(x,y)
+		print(chr(151).."confirm score",x,y+76)
+	else
+		print(chr(151).."start screen",x,y+16)
+	end
 end
 
 -->8
@@ -583,6 +629,232 @@ function draw_grid()
 	line(x+c_grid_w,y+c_grid_h)
 	line(x-1,y+c_grid_h)
 	line(x-1,y-1)
+end
+
+--[[
+x=window x position
+y=window y position
+w=window width
+h=window height
+t=window title
+fgc=foreground color
+bgc=background color
+content=function for drawing the content of the window
+cx=content x offset
+cy=content y offset	
+]]
+function draw_window(x,y,w,h,t,fgc,bgc,content)
+	rectfill(x,y,x+w,y+h,bgc)
+	rect(x,y,x+w,y+h,fgc)
+	print(t,x+2,y+2,fgc)
+	line(x,y+8,x+w,y+8)
+	content(x+2,y+10)
+end
+
+-->8
+--highscore
+--==============================
+--mod4
+-- -5,-4,-3,-2,-1,0,1,2,3,4,5
+--  3, 4, 1, 2, 3,4,1,2,3,4,1,	
+function wrap_value(v,min,max)
+    range=max-min+1
+	if v>0 then 
+		v=v%range
+        if v==0 then
+            return max
+        else
+            return v+(min-1)
+        end
+	else
+		v=abs(v)%range
+		if v==0 then
+			return max 
+		else
+			return max-v
+		end
+	end
+end
+
+function get_name()
+	local out=""
+	for char in all(current_editable_name) do
+		out=out..char
+	end
+	return out
+end
+
+is_highscore_achieved=false 
+-- 31 different chars possible (2ょ●6)
+-- 0|32 for end of string
+encode = {
+	a=1,b=2,c=3,d=4,e=5,f=6,g=7,
+	h=8,i=9,j=10,k=11,l=12,m=13,
+	n=14,o=15,p=16,q=17,r=18,
+	s=19,t=20,u=21,v=22,w=23,
+	x=24,y=25,z=26
+}
+encode["<"]=27
+encode["_"]=28
+encode["-"]=29
+encode["+"]=30
+encode["|"]=31
+
+decode = {
+	"a","b","c","d","e","f","g","h",
+	"i","j","k","l","m","n","o","p","q",
+	"r","s","t","u","v","w","x","y","z",
+	"<","_","-","+","|"
+}
+
+function save_highscore(name, score)		
+	-- find index at which new score is added
+	local score_index
+	for i=1,#highscore do
+		if(score > highscore[i].score) then
+			score_index = i
+			break
+		end
+	end
+
+	if score_index ~= nil then
+		add(highscore,{name=name,score=score},score_index)
+		deli(highscore)
+		write_highscore_to_cartrige()
+	end
+end
+
+function read_highscore_from_cartrige()
+	highscore={}
+	for i=0,19,2 do
+		local name = decodeName(dget(i)) -- decode to string
+		local score = dget(i+1)
+		add(highscore,{name=name,score=score})
+	end
+end
+
+function write_highscore_to_cartrige()
+	for i=1,#highscore do
+		dset((i-1)*2,encodeName(highscore[i].name))
+		dset(((i-1)*2)+1,highscore[i].score)
+	end
+end
+
+--number to string
+--64=...0100.0000 >>>5 -> x0000010=2
+--encoded is a 32bit value
+--64 -> 0x0040.0000 -> binary: 0000 0000 0010 0000 0000 0000 0000 0000
+function decodeName(encoded)
+	local word_length=6 --6*5=30bits
+	local char_index=0
+	local max_char_bits=5
+	local decoded=""
+	local val
+	for i=1,word_length do
+		-- shift current char to the right
+		val = encoded >>> (i-1)*max_char_bits
+		if val == 0 then break end --end of data
+		--get the first 5 bits with bitmask, 31 ->...00000 11111
+		val = (val & (31>>>16)) 
+		--and convert int32 to num16.16
+		val = val << 16
+		-- lookup char for value
+		local char = decode[val]
+		-- and concatenate 
+		decoded=decoded..char
+	end
+	return decoded
+end
+
+-- string -> number
+-- characters are encoded as numerical values
+-- every char is encoded with 5 bits (31 chars possible) 
+-- max chars per name -> 6 (x5=30bits)
+-- first char at most right position of ("artur" is stored as "rutra")
+-- "abc" becomes
+--						c	  b 	a
+-- 00 00000 00000 00000 00011 00010 00001
+function encodeName(name)
+	name=split(name,"")
+	local char_index=0
+	local word_length=6
+	local encoded=0.0
+	local max_char_bits=5
+	for char in all(name) do
+		local num = encode[char]
+		 --convert to 32bit integer by removing the fractional bits 
+		num = num >>> 16
+		--move the bits to the correct position in a 32bit array
+		num = num << (char_index * max_char_bits) 
+		encoded = encoded | num	
+		char_index+=1
+	end
+	return encoded
+end
+
+function draw_highscore_read(x,y)
+	color(7)
+	local char_height=7
+	for i=1,#highscore do
+		local temp_y=y+(i-1)*char_height
+		local token=". "
+		if(i>=10) token="."
+		if highscore[i].score==0 then 
+			print(i..token,x,temp_y)
+		else
+			print(i..token..highscore[i].name,x,temp_y)
+			print(highscore[i].score,x+38+get_x_offset(highscore[i].score),temp_y)
+		end
+	end	
+end
+
+function draw_highscore_edit(x,y)
+	color(e_colors.white)
+	local is_score_inserted=false
+
+	local char_width=4
+	local char_height=7
+	local active_letter_x=x+(3*char_width)+(current_edit_index-1)*char_width
+	
+	for i=1,#highscore do
+		local temp_y=y+(i-1)*char_height
+		local token=". "
+		if(i>=10) token="."
+		if not is_score_inserted and score > highscore[i].score then
+			rectfill(active_letter_x,temp_y,active_letter_x+char_width-2,temp_y+5,e_colors.red)
+			color(e_colors.white)
+			print(i..token,x,temp_y)
+			print(get_name(),x+12,temp_y)
+			print(score,x+38+get_x_offset(score),temp_y)
+			is_score_inserted=true
+		elseif highscore[i+(is_score_inserted and -1 or 0)].score==0 then 
+			print(i..token,x,temp_y)
+		else 
+			print(i..token..highscore[i+(is_score_inserted and -1 or 0)].name,x,temp_y)
+			local highscore = highscore[i+(is_score_inserted and -1 or 0)].score
+			print(highscore,x+38+get_x_offset(highscore),temp_y)
+		end
+	end	
+end
+
+-- to right align numbers
+function get_x_offset(highscore)
+	if(highscore > 9999)return 0
+	if(highscore > 999)return 4
+	if(highscore > 99)return 8
+	if(highscore > 9)return 12
+	return 16
+end
+
+function erase_all_highscores()
+	for i=0,19 do
+		dset(i,0)
+	end
+	read_highscore_from_cartrige()
+end
+
+function is_highscore(score)
+	return score > highscore[#highscore].score
 end
 
 __gfx__
