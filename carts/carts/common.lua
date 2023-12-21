@@ -30,6 +30,48 @@ function print_array(t,x,y,col)
 	print(out,50,50,col)
 end
 
+-- wraps a value within a min-max range
+-- in: -5,-4,-3,-2,-1,0,1,2,3,4,5
+-- out: 3, 4, 1, 2, 3,4,1,2,3,4,1,	
+function wrap_value(v,min,max)
+    range=max-min+1
+	if v>0 then 
+		v=v%range
+        if v==0 then
+            return max
+        else
+            return v+(min-1)
+        end
+	else
+		v=abs(v)%range
+		if v==0 then
+			return max 
+		else
+			return max-v
+		end
+	end
+end
+
+--[[
+x=window x position
+y=window y position
+w=window width
+h=window height
+t=window title
+fgc=foreground color
+bgc=background color
+content=function for drawing the content of the window
+cx=content x offset
+cy=content y offset	
+]]
+function draw_window(x,y,w,h,t,fgc,bgc,content)
+	rectfill(x,y,x+w,y+h,bgc)
+	rect(x,y,x+w,y+h,fgc)
+	print(t,x+2,y+2,fgc)
+	line(x,y+8,x+w,y+8)
+	content(x+2,y+10)
+end
+
 --enum for color values
 e_colors={
     pitchblue=0,darkblue=1,purple=2,earthlygreen=3,
