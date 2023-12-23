@@ -4,10 +4,14 @@ hs={
     current_editable_name="a",
     is_highscore_achieved=false,
     on_confirmed=nil,
+    score_full_width=6*c_char_width+5,
     -- highscore_data is saved in cartridge data
     -- indices 0-19
     -- 0=1st name, 1=1st score, ..., 18=10th name, 19=10th score 
-    highscore_data=nil
+    highscore_data=nil,
+    support_32=true,
+    score="",
+    score_32=0
 }
 
 -- 31 different chars possible (2ょ●6)
@@ -17,13 +21,9 @@ hs.encoding_table = {
 	h=8,i=9,j=10,k=11,l=12,m=13,
 	n=14,o=15,p=16,q=17,r=18,
 	s=19,t=20,u=21,v=22,w=23,
-	x=24,y=25,z=26
+	x=24,y=25,z=26,["<"]=27,["_"]=28,
+    ["-"]=29,["+"]=30,["|"]=31,
 }
-hs.encoding_table["<"]=27
-hs.encoding_table["_"]=28
-hs.encoding_table["-"]=29
-hs.encoding_table["+"]=30
-hs.encoding_table["|"]=31
 
 hs.decoding_table = {
 	"a","b","c","d","e","f","g","h",
@@ -62,7 +62,7 @@ function hs:update()
 			self.current_editable_name[self.current_edit_index]="a"
 		end
 	elseif btnp(e_buttons.x) then
-		self:save_highscore(self:get_name(),score)
+		self:save_highscore(self:get_name(),self.score_32)
         self:on_confirmed()		
 	end
 end
@@ -75,11 +75,12 @@ function hs:draw_highscore(x,y)
 		local temp_y=y+(i-1)*char_height
 		local token=". "
 		if(i>=10) token="."
-		if self.highscore_data[i].score==0 then 
+		if self.highscore_data[i].score_32==0 then 
 			print(i..token,x,temp_y)
 		else
 			print(i..token..self.highscore_data[i].name,x,temp_y)
-			print(self.highscore_data[i].score,x+38+self:get_x_offset(self.highscore_data[i].score),temp_y)
+            local score_width=print(tostr(self.highscore_data[i].score_32,0x2),0,-20)
+			print(tostr(self.highscore_data[i].score_32,0x2),x+38+self.score_full_width-score_width,temp_y)
 		end
 	end	
 end
@@ -96,19 +97,22 @@ function hs:edit_highscore(x,y)
 		local temp_y=y+(i-1)*char_height
 		local token=". "
 		if(i>=10) token="."
-		if not is_score_inserted and score > self.highscore_data[i].score then
+		if not is_score_inserted and self.score_32 > self.highscore_data[i].score_32 then
 			rectfill(active_letter_x,temp_y,active_letter_x+char_width-2,temp_y+5,e_colors.red)
 			color(e_colors.white)
 			print(i..token,x,temp_y)
 			print(self:get_name(),x+12,temp_y)
-			print(score,x+38+self:get_x_offset(score),temp_y)
+            local score_width=print(self.score,0,-20)
+			print(self.score,x+38+self.score_full_width-score_width,temp_y)
 			is_score_inserted=true
-		elseif self.highscore_data[i+(is_score_inserted and -1 or 0)].score==0 then 
+		elseif self.highscore_data[i+(is_score_inserted and -1 or 0)].score_32==0 then 
 			print(i..token,x,temp_y)
 		else 
 			print(i..token..self.highscore_data[i+(is_score_inserted and -1 or 0)].name,x,temp_y)
-			local highscore = self.highscore_data[i+(is_score_inserted and -1 or 0)].score
-			print(highscore,x+38+self:get_x_offset(highscore),temp_y)
+			local highscore_32 = self.highscore_data[i+(is_score_inserted and -1 or 0)].score_32
+            local highscore=tostr(highscore_32,0x2)
+            local score_width=print(highscore,0,-20)
+			print(highscore,x+38+self.score_full_width-score_width,temp_y)
 		end
 	end	
 end
@@ -117,13 +121,15 @@ function hs:read_highscore_from_cartrige()
 	self.highscore_data={}
 	for i=0,19,2 do
 		local name = self:decode_name(dget(i)) -- decode to string
-		local score = dget(i+1)
-		add(self.highscore_data,{name=name,score=score})
+		local score_32 = dget(i+1)
+		add(self.highscore_data,{name=name,score_32=score_32})
 	end
 end
 
 function hs:send_score(score)
-    self.is_highscore_achieved=self:is_highscore(score) 
+    self.score=score
+    self.score_32=tonum(score,0x2)
+    self.is_highscore_achieved=self:is_highscore(self.score_32) 
 end
 
 function hs:get_name()
@@ -134,18 +140,18 @@ function hs:get_name()
 	return out
 end
 
-function hs:save_highscore(name, score)	
+function hs:save_highscore(name, score_32)	
 	-- find index at which new score is added
 	local score_index
 	for i=1,#self.highscore_data do
-		if(score > self.highscore_data[i].score) then
+		if(score_32 > self.highscore_data[i].score_32) then
 			score_index = i
 			break
 		end
 	end
 
 	if score_index ~= nil then
-		add(self.highscore_data,{name=name,score=score},score_index)
+		add(self.highscore_data,{name=name,score_32=score_32},score_index)
 		deli(self.highscore_data)
 		self:write_highscore_to_cartrige()
 	end
@@ -154,7 +160,7 @@ end
 function hs:write_highscore_to_cartrige()
 	for i=1,#self.highscore_data do
 		dset((i-1)*2,self:encode_name(self.highscore_data[i].name))
-		dset(((i-1)*2)+1,self.highscore_data[i].score)
+		dset(((i-1)*2)+1,self.highscore_data[i].score_32)
 	end
 end
 
@@ -210,15 +216,6 @@ function hs:encode_name(name)
 	return encoded
 end
 
--- for right aligning score numbers
-function hs:get_x_offset(num)
-	if(num > 9999)return 0
-	if(num > 999)return 4
-	if(num > 99)return 8
-	if(num > 9)return 12
-	return 16
-end
-
 -- erases all data permanently
 function hs:erase_all_highscores()
 	for i=0,19 do
@@ -227,7 +224,6 @@ function hs:erase_all_highscores()
 	self:read_highscore_from_cartrige()
 end
 
-function hs:is_highscore(score)
-	return score > self.highscore_data[#self.highscore_data].score
+function hs:is_highscore(score_32)
+	return score_32>self.highscore_data[#self.highscore_data].score_32
 end
-

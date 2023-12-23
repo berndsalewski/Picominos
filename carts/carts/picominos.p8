@@ -4,7 +4,7 @@ __lua__
 #include common.lua
 #include highscore.lua
 
-cart_id="picotris"
+cart_id="picominos"
 
 e_game_states={none=0,start=1,match=2,game_over=3, highscore=4}
 game_state=e_game_states.none
@@ -17,7 +17,7 @@ end
 
 function _update60()
 	if game_state==e_game_states.start then
-		game_state_start.update()
+		game_state_start:update()
 	elseif game_state==e_game_states.match then
 		game_state_match:update()
 	elseif game_state==e_game_states.highscore then
@@ -31,7 +31,7 @@ function _draw()
 	cls()
 	rect(0,0,127,127,5)
 	if game_state==e_game_states.start then
-		game_state_start.draw()
+		game_state_start:draw()
 	elseif game_state==e_game_states.match then
 		game_state_match:draw()
 	elseif game_state==e_game_states.game_over then
@@ -66,28 +66,97 @@ end
 -->8
 --game_start
 --==============================
-game_state_start={}
-function game_state_start.update()
+game_state_start={
+	is_initialised=false,
+	show_highscore=false,
+	minos={},
+	mino_coords={
+		rectangle:new({x=64,y=0,w=4,h=1}),--i
+		rectangle:new({x=64,y=1,w=3,h=2}),--l
+		rectangle:new({x=67,y=3,w=2,h=2}),--o
+		rectangle:new({x=64,y=5,w=3,h=2}),--s
+		rectangle:new({x=64,y=3,w=3,h=2}),--z
+		rectangle:new({x=68,y=0,w=3,h=2}),--t
+		rectangle:new({x=67,y=1,w=3,h=2}),--j
+	}
+}
+
+function game_state_start:init()
+	game_state_start:spawn_minos()
+	self.is_initialised=true
+end
+
+function game_state_start:update()
+	if not self.is_initialised then
+		self:init()
+	end
+
 	if btnp(5) then
 		game_state=e_game_states.match
+		self.is_initialised=false
+	end
+
+	if(btnp(4)) then
+		self.show_highscore=not self.show_highscore
+	end
+
+	game_state_start:update_minos()
+end
+
+function game_state_start:draw()
+	game_state_start:draw_background()
+
+	if self.show_highscore then
+		hs:draw_highscore(34,14)
+		print("❎start game",40,90,6)
+		print("🅾️title",40,96,6)
+
+	else
+		sspr(72,0,50,32,39,30)
+		print("❎start game",40,90,6)
+		print("🅾️highscore",40,96,6)
+	end
+	
+	--print("❎start game 🅾️toggle highscore",20,100,6)
+	print("⬅️left|➡️right",2,109,5)
+	print("⬇️fast drop",2,115)
+	print("🅾️rotate left|❎rotate right",2,121)
+end
+
+function game_state_start:draw_background()
+	for i=1,#self.minos do
+		--index 1,width 4,height 1
+		local mino=self.mino_coords[self.minos[i].idx]
+		sspr(mino.x,mino.y,mino.w,mino.h,self.minos[i].x,flr(self.minos[i].y))
 	end
 end
 
-function game_state_start.draw()
-	rectfill(1,1,126,7,1)
-	print("picotris",2,2,6)
-	line(1,9,126,9,5)
-	line(1,8,126,8,6)
-	hs:draw_highscore(34,27)
-	print("❎".."start game",40,100,6)
-	print("⬅️".."left|".."➡️".."right",2,109,5)
-	print("⬇️".."fast drop",2,115)
-	print("🅾️".."rotate left|".."❎".."rotate right",2,121)
+function game_state_start:spawn_minos()
+	for x=10,120,10 do
+		for y=10,120,10 do
+			if(rnd(1)>0.6)then
+				add(self.minos,{idx=flr(rnd(6))+1,["x"]=x,["y"]=y, v=rnd(0.2)+0.2})	
+			end
+		end 
+	end
+end
+
+function game_state_start:update_minos()
+	for _,v in ipairs(self.minos) do
+		v.y+=v.v
+		if v.y>126 then
+			v.y=1
+			v.x=flr((rnd(12.3)+0.1)*10)
+			v.v=rnd(0.2)+0.2
+		end
+	end
 end
 
 -->8
 --match
 --==============================
+game_state_match={is_initialised=false}
+
 --config
 c_cells_hor=10
 c_cells_vert=20
@@ -96,6 +165,40 @@ c_grid_h=c_cells_vert*c_cell_size
 c_grid_w=c_cells_hor*c_cell_size
 c_grid_x=64-c_grid_w/2-18
 c_grid_y=4
+
+-- match variables & constants
+c_max_level=19
+c_line_score_factor={40,100,300,1200}
+cleared_lines=0
+level=0
+-- score is stored as a string to allow for higher values than 16bit integers
+score="0"
+max_score="999999"
+-- soft dropping
+softdrop_line_count=0
+is_softdropping=false
+is_btn_down_pressed=false
+-- how many frames pass before 1 cell move -> 1/3G
+c_softdrop_speed=3
+-- drop speed per level defined as frame count between drops 
+c_mino_drop_speeds={53,49,45,41,37,33,28,22,17,11,10,9,8,7,6,6,5,5,4,4,3}
+-- frames since match start
+frame_count=0
+-- the last frame when the mino was dropped
+last_drop_frame=0
+
+-- ARE entry delay see: https://tetris.wiki/c_are
+c_are=2 
+frames_since_lock=0
+
+c_line_clear_delay=93
+frames_since_clear=0
+-- was at least 1 line cleared with the last drop?
+is_line_cleared=false
+lines_to_clear={}
+
+c_line_clear_blink_rate=20
+line_clear_blink_framecount=0
 
 --[[
 stores the e_mino_types for a 
@@ -195,41 +298,11 @@ function mino_bag:fill()
 	end
 end
 
--- match variables & constants
-c_max_level=19
-c_line_score_factor={40,100,300,1200}
-cleared_lines=0
-level=0
-score=0
--- soft dropping
-softdrop_line_count=0
-is_softdropping=false
-is_btn_down_pressed=false
--- how many frames pass before 1 cell move -> 1/3G
-c_softdrop_speed=3
--- drop speed per level defined as frame count between drops 
-c_mino_drop_speeds={53,49,45,41,37,33,28,22,17,11,10,9,8,7,6,6,5,5,4,4,3}
--- frames since match start
-frame_count=0
--- the last frame when the mino was dropped
-last_drop_frame=0
-
--- ARE entry delay see: https://tetris.wiki/c_are
-c_are=2 
-frames_since_lock=0
-
-c_line_clear_delay=93
-frames_since_clear=0
--- was at least 1 line cleared with the last drop?
-is_line_cleared=false
-lines_to_clear={}
-
-game_state_match={is_initialised=false}
 function game_state_match:init()
 	mino_bag:fill()
 	lines=0
 	level=0
-	score=0
+	score="0"
 	init_matrix()
 	frame_count=0
 	last_drop_frame=0
@@ -258,7 +331,7 @@ function game_state_match:update()
 			frames_since_clear+=1
 			if frames_since_clear==c_line_clear_delay then
 				remove_cleared_lines()
-				blink_framecount=0
+				line_clear_blink_framecount=0
 				spawn_mino()
 				is_line_cleared=false
 				frames_since_clear=0
@@ -337,7 +410,7 @@ function move_mino(dir)
 			matrix[x][y]=mino.typ
 		end
 
-		score+=softdrop_line_count
+		add_to_score(softdrop_line_count)
 		softdrop_line_count=0
 
 		for y=c_cells_vert,1,-1 do
@@ -356,13 +429,24 @@ function move_mino(dir)
 			cleared_lines+=#lines_to_clear
 			local new_level=cleared_lines\10 --integer division
 			if(new_level~=level and new_level<=c_max_level)level=new_level
-			score+=c_line_score_factor[#lines_to_clear]*(level+1)
+			add_to_score(c_line_score_factor[#lines_to_clear]*(level+1))
 			is_line_cleared=true
 		end
 		is_softdropping=false
 		last_drop_frame=frame_count
 		mino.pos=nil
 	end
+end
+
+-- for storing values exceeding the 16 bit range of pico
+-- we need to store the number as a string and use 
+-- tonum() and tostr() with flag '0x2' to convert between
+-- string and 32 bit number values
+function add_to_score(val_16)
+	local val_32=val_16>>>16
+	local score_32=tonum(score,0x2)
+	local result_32=score_32+val_32
+	score=tostr(result_32,0x2)
 end
 
 function spawn_mino()
@@ -382,6 +466,8 @@ function spawn_mino()
 end
 
 function rotate_mino(dir)
+	if(mino.pos==nil)return
+
 	local rot_valid=true
 	local new_mino={}
 	if dir=="cv" then
@@ -430,17 +516,15 @@ function rotate_mino(dir)
 	end
 end
 
-c_blink_rate=20
-blink_framecount=0
 function draw_matrix()
 	if #matrix==0 then return end
-	if(#lines_to_clear>0)blink_framecount+=1
+	if(#lines_to_clear>0)line_clear_blink_framecount+=1
 	for x=1,c_cells_hor do
 		for y=1,c_cells_vert do
 			local draw=true
 			if #lines_to_clear>0 then
 				for i=1,#lines_to_clear do
-					if lines_to_clear[i]==y and blink_framecount%c_blink_rate>0 and blink_framecount%c_blink_rate<11 then
+					if lines_to_clear[i]==y and line_clear_blink_framecount%c_line_clear_blink_rate>0 and line_clear_blink_framecount%c_line_clear_blink_rate<11 then
 						--dont draw cell
 						draw=false
 					end
@@ -461,7 +545,8 @@ function draw_cell(x,y,spr_idx)
 end
 
 function draw_mino()
-	if mino.pos==nil then return end	
+	if(mino.pos==nil)return
+
 	for i=1,7,2 do
 		spr(mino.typ,
 			c_grid_x+mino.pos[i]*c_cell_size,
@@ -604,12 +689,38 @@ function draw_game_over_content(x,y)
 	end
 end
 __gfx__
-00000000111111008888880099999900333333002222220011111100555555000000000000000000000000000000000000000000000000000000000000000000
-000000001cccc100899998009aaaa9003bbbb3002888820012222100511115000000000000000000000000000000000000000000000000000000000000000000
-000000001cccc100899998009aaaa9003bbbb3002888820012222100511115000000000000000000000000000000000000000000000000000000000000000000
-000000001cccc100899998009aaaa9003bbbb3002888820012222100511115000000000000000000000000000000000000000000000000000000000000000000
-000000001cccc100899998009aaaa9003bbbb3002888820012222100511115000000000000000000000000000000000000000000000000000000000000000000
-00000000111111008888880099999900333333002222220011111100555555000000000000000000000000000000000000000000000000000000000000000000
+0000000011111100888888009999990033333300222222001111110055555500cccc02220cc10000000c1000bb3000882000820000aaaaa400000eeee2000000
+000000001cccc100899998009aaaa9003bbbb300288882001222210051111500999d00200ccc100000cc1000bb300088820082000aa4000a400ee2000e200000
+000000001cccc100899998009aaaa9003bbbb300288882001222210051111500900ddd000cc1c1000c1c10000000008828208200aa400000a40ee20000000000
+000000001cccc100899998009aaaa9003bbbb300288882001222210051111500bb0aa0000cc10c10c10c1000bb30008820828200aa400000a40ee20000000000
+000000001cccc100899998009aaaa9003bbbb3002888820012222100511115000bbaa0000cc100cc100c1000bb30008820088200aa400000a4000eeee2000000
+0000000011111100888888009999990033333300222222001111110055555500088000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000880000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40000000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb30008820008200aa400000a40ee2000e200000
+0000000000000000000000000000000000000000000000000000000000000000000000000cc10000000c1000bb300088200082000aa4000a400ee200e2000000
+000000000000000000000000000000000000000000000000000000000000000000000000cccc100000ccc10bbbb308888208882000aaaaa40000eeee20000000
 __sfx__
 000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0110000001050090500b0500c0500d0501105014050160501805019050190501905019050170501605015050160501a05020050240502605027050290502a0502b0502c0502a0502505023050210501b0501f050
