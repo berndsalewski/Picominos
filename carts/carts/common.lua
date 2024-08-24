@@ -93,3 +93,8 @@ e_colors={
     blue=12,violet=13,pink=14,peach=15
 }
 e_buttons={left=0,right=1,up=2,down=3,o=4,x=5}
+
+--taken from https://www.lexaloffle.com/bbs/?tid=2341
+function set_sfx_speed(sfx, speed)
+    poke(0x3200 + 68*sfx + 65, speed)
+end

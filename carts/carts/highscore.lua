@@ -45,23 +45,28 @@ end
 
 function hs:update()
     if btnp(e_buttons.up) then
+		sfx(9,3)
 		self.current_selected_char=wrap_value(self.current_selected_char+1,1,#self.decoding_table)
 		self.current_editable_name[self.current_edit_index]=self.decoding_table[self.current_selected_char]
 	elseif btnp(e_buttons.down) then
+		sfx(9,3)
 		self.current_selected_char=wrap_value(self.current_selected_char-1,1,#self.decoding_table)
 		self.current_editable_name[self.current_edit_index]=self.decoding_table[self.current_selected_char]
 	elseif btnp(e_buttons.left) then
+		sfx(10,3)
 		self.current_edit_index=max(self.current_edit_index-1,1)
 		if #self.current_editable_name>self.current_edit_index then
 			self.current_editable_name[self.current_edit_index+1]=nil
 		end
 	elseif btnp(e_buttons.right) then
+		sfx(10,3)
 		self.current_edit_index=min(self.current_edit_index+1,6)
 		self.current_selected_char=self.encoding_table["a"]
 		if(self.current_edit_index>#self.current_editable_name)then
 			self.current_editable_name[self.current_edit_index]="a"
 		end
 	elseif btnp(e_buttons.x) then
+		sfx(11,3)
 		self:save_highscore(self:get_name(),self.score_32)
         self:on_confirmed()		
 	end
